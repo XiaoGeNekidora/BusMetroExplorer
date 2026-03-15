@@ -504,7 +504,10 @@
                 <div class="info-item"><span class="label">编码:</span> ${props.stop_id || 'N/A'}</div>
                 <div class="info-item"><span class="label">城市:</span> ${props.city_code || 'N/A'}</div>
                 <hr>
-                <strong>经停线路:</strong>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                    <strong>经停线路:</strong>
+                    <button class="add-map-btn" style="padding: 2px 8px; font-size: 12px; margin-top:0;" onclick="addAllRoutesFromStop('${props.stop_id}')">显示所有</button>
+                </div>
                 <div id="routes-container">
                     <div>正在加载线路信息...</div>
                 </div>
@@ -543,6 +546,54 @@
         } else {
             panel.style.display = 'none';
         }
+    }
+
+    // Function to add all routes passing through a stop
+    function addAllRoutesFromStop(stopId) {
+        if (!stopId) return;
+
+        // Show loading state or feedback?
+        // We can just use alert on finish or modify button text.
+        // Let's modify button text temporarily.
+        // But finding the button is hard without ID. Let's rely on alert for now.
+
+        fetch(`${backend}/stop_details?stop_id=${stopId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.length > 0) {
+                     let addedCount = 0;
+                     data.forEach(route => {
+                         // Check duplicates in activeRoutes
+                         if (activeRoutes.some(r => r.route_cn === route.route_cn)) return;
+
+                         const geojson = parseWKT(route.geometry);
+                         if (geojson) {
+                             const color = colors[colorIndex % colors.length];
+                             colorIndex++;
+                             activeRoutes.push({
+                                route_cn: route.route_cn,
+                                geometry: geojson,
+                                color: color
+                             });
+                             addedCount++;
+                         }
+                     });
+
+                     if (addedCount > 0) {
+                         updateActiveRoutesUI();
+                         updateDeckLayers();
+                         alert(`成功添加 ${addedCount} 条新线路！`);
+                     } else {
+                         alert("没有发现尚未添加的新线路。");
+                     }
+                } else {
+                    alert("未查询到线路详细信息");
+                }
+            })
+            .catch(err => {
+                console.error("Add all routes error:", err);
+                alert("获取线路失败");
+            });
     }
 
     const deckgl = new DeckGL({

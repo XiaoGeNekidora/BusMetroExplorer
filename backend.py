@@ -66,6 +66,30 @@ def get_routes_by_stop(id: str = Query(..., alias="stop_id", description="Stop I
     
     return [dict(row) for row in rows]
 
+@app.get("/stop_details", response_model=List[Dict[str, Any]])
+def get_stop_routes_details(id: str = Query(..., alias="stop_id", description="Stop ID (e.g. 'BV09219967')")):
+    """
+    根据 stop_id 返回所有经过该站点的线路的完整信息（包含 geometry）。
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 联表查询：找出该站点对应的所有 route_cn，然后在 bus_routes 中查找这些线路的完整信息
+    query = """
+        SELECT DISTINCT r.*
+        FROM bus_routes r
+        JOIN bus_stops s ON r.route_cn = s.route_cn
+        WHERE s.stop_id = ?
+    """
+    cursor.execute(query, (id,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    if not rows:
+        return []
+        
+    return [dict(row) for row in rows]
+
 if __name__ == "__main__":
     # Run user with: python backend.py
     # Access API docs at: http://127.0.0.1:8000/docs
