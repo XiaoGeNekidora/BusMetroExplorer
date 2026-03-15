@@ -87,48 +87,39 @@
             line-height: 1.2;
         }
 
-        /* 模态框样式 */
-        #route-modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            overflow: auto;
-            background-color: rgba(0,0,0,0.4);
-        }
-
-        .modal-content {
-            background-color: #fefefe;
-            margin: 10% auto;
+        /* 线路详情面板样式 */
+        #route-detail-panel {
+            position: absolute;
+            top: 20px;
+            right: 320px; /* 显示在站点详情面板左侧 */
+            width: 320px;
+            max-height: 80%;
+            background: rgba(255, 255, 255, 0.95);
             padding: 20px;
-            border: 1px solid #888;
-            width: 80%;
-            max-width: 600px;
             border-radius: 8px;
-            box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
-            position: relative;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            font-family: sans-serif;
+            z-index: 100;
+            overflow-y: auto;
+            pointer-events: auto;
+            display: none;
         }
 
-        .close-btn {
-            color: #aaa;
+        .panel-close-btn {
             float: right;
-            font-size: 28px;
+            font-size: 20px;
             font-weight: bold;
+            color: #aaa;
             cursor: pointer;
+            line-height: 1;
         }
 
-        .close-btn:hover,
-        .close-btn:focus {
-            color: black;
-            text-decoration: none;
-            cursor: pointer;
+        .panel-close-btn:hover {
+            color: #000;
         }
 
-        .modal-header {
-            border-bottom: 1px solid #eee;
+        .route-header {
+            border-bottom: 2px solid #007bff;
             padding-bottom: 10px;
             margin-bottom: 15px;
         }
@@ -316,6 +307,20 @@
             color: #888;
             margin-top: 2px;
         }
+
+        /* Unified Dual Text Styles */
+        .text-main {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            line-height: 1.3;
+        }
+        .text-sub {
+            font-size: 11px;
+            color: #888;
+            line-height: 1.2;
+            margin-top: 1px;
+        }
     </style>
 </head>
 <body>
@@ -333,13 +338,11 @@
     <div id="panel-content">点击地图上的点查看详情</div>
 </div>
 
-<!-- 路线详情模态框 -->
-<div id="route-modal">
-    <div class="modal-content">
-        <span class="close-btn">&times;</span>
-        <div id="modal-body">
-            <!-- 内容将通过 JS 插入 -->
-        </div>
+<!-- 路线详情面板 -->
+<div id="route-detail-panel">
+    <span class="panel-close-btn" onclick="document.getElementById('route-detail-panel').style.display='none'">&times;</span>
+    <div id="route-detail-content">
+        <!-- 内容将通过 JS 插入 -->
     </div>
 </div>
 
@@ -350,9 +353,8 @@
     const panel = document.getElementById('info-panel');
     const content = document.getElementById('panel-content');
     const backend = "http://127.0.0.1:8000";
-    const modal = document.getElementById('route-modal');
-    const modalBody = document.getElementById('modal-body');
-    const closeBtn = document.getElementsByClassName("close-btn")[0];
+    const routeDetailPanel = document.getElementById('route-detail-panel');
+    const routeDetailContent = document.getElementById('route-detail-content');
     const activeRoutesList = document.getElementById('active-routes-list');
 
     // View State
@@ -371,28 +373,16 @@
         [255, 128, 0], [0, 255, 128], [128, 0, 255]
     ];
     let colorIndex = 0;
-    
+
     // Data cache
     let allStopsData = [];
     let visibleStopsData = [];
     let lastFilterZoom = 0;
 
-    // Close modal when clicking X
-    closeBtn.onclick = function() {
-        modal.style.display = "none";
-    }
-
-    // Close modal when clicking outside
-    window.onclick = function(event) {
-        if (event.target == modal) {
-            modal.style.display = "none";
-        }
-    }
-
     // Function to show route details
     function showRouteDetails(routeCn) {
-        modal.style.display = "block";
-        modalBody.innerHTML = '<div>正在加载详细信息...</div>';
+        routeDetailPanel.style.display = "block";
+        routeDetailContent.innerHTML = '<div>正在加载详细信息...</div>';
 
         // Parallel fetching: Route Details AND Route Stops
         Promise.all([
@@ -410,7 +400,7 @@
                     const btnDisabled = isAlreadyAdded ? "disabled" : "";
 
                     html += `
-                        <div class="modal-header">
+                        <div class="route-header">
                             <h2 style="margin:0; color:#007bff;">${item.route_cn}</h2>
                             <div style="color:#666;">${item.route_en || ''}</div>
                             <button class="add-map-btn"
@@ -421,15 +411,43 @@
                             </button>
                         </div>
                         <div class="detail-row"><div class="detail-label">线路类型:</div><div class="detail-value">${item.route_type || '-'}</div></div>
-                        <div class="detail-row"><div class="detail-label">运营公司:</div><div class="detail-value">${item.company_cn || '-'}</div></div>
-                        <div class="detail-row"><div class="detail-label">Company:</div><div class="detail-value">${item.company_en || '-'}</div></div>
-                        <div class="detail-row"><div class="detail-label">起点站:</div><div class="detail-value">${item.s_stop_cn || '-'} (${item.s_stop_en || ''})</div></div>
-                        <div class="detail-row"><div class="detail-label">终点站:</div><div class="detail-value">${item.e_stop_cn || '-'} (${item.e_stop_en || ''})</div></div>
+
+                        <div class="detail-row">
+                            <div class="detail-label">运营公司:</div>
+                            <div class="detail-value">
+                                <div class="text-main">${item.company_cn || '-'}</div>
+                                <div class="text-sub">${item.company_en || ''}</div>
+                            </div>
+                        </div>
+
+                        <div class="detail-row">
+                            <div class="detail-label">起点站:</div>
+                            <div class="detail-value">
+                                <div class="text-main">${item.s_stop_cn || '-'}</div>
+                                <div class="text-sub">${item.s_stop_en || ''}</div>
+                            </div>
+                        </div>
+
+                        <div class="detail-row">
+                            <div class="detail-label">终点站:</div>
+                            <div class="detail-value">
+                                <div class="text-main">${item.e_stop_cn || '-'}</div>
+                                <div class="text-sub">${item.e_stop_en || ''}</div>
+                            </div>
+                        </div>
+
                         <div class="detail-row"><div class="detail-label">首班车:</div><div class="detail-value">${item.start_time || '-'}</div></div>
                         <div class="detail-row"><div class="detail-label">末班车:</div><div class="detail-value">${item.end_time || '-'}</div></div>
                         <div class="detail-row"><div class="detail-label">票价(基础/全程):</div><div class="detail-value">${item.basic_prc || '-'} / ${item.total_prc || '-'}</div></div>
                         <div class="detail-row"><div class="detail-label">距离/长度:</div><div class="detail-value">${item.distance || '-'} / ${item.length || '-'} km</div></div>
-                        <div class="detail-row"><div class="detail-label">城市:</div><div class="detail-value">${item.city_cn || '-'} (${item.city_en || '-'})</div></div>
+
+                        <div class="detail-row">
+                            <div class="detail-label">城市:</div>
+                            <div class="detail-value">
+                                <div class="text-main">${item.city_cn || '-'}</div>
+                                <div class="text-sub">${item.city_en || ''}</div>
+                            </div>
+                        </div>
                     `;
 
                     // Add stop list if available and matches this route name (though usually duplicate route names for diff directions are separate entries in backend/db,
@@ -467,13 +485,13 @@
                         html += '<hr>';
                     }
                 });
-                modalBody.innerHTML = html;
+                routeDetailContent.innerHTML = html;
             } else {
-                modalBody.innerHTML = '<div>未找到该线路的详细信息</div>';
+                routeDetailContent.innerHTML = '<div>未找到该线路的详细信息</div>';
             }
         }).catch(err => {
             console.error("Fetch route details error:", err);
-            modalBody.innerHTML = '<div style="color:red;">获取失败</div>';
+            routeDetailContent.innerHTML = '<div style="color:red;">获取失败</div>';
         });
     }
 
@@ -677,8 +695,10 @@
             panel.style.display = 'block';
 
             content.innerHTML = `
-                <div class="info-item"><span class="label">站名:</span> ${props.name_cn || '未知'}</div>
-                <div class="info-item"><span class="label">Station Name:</span> ${props.name_en || '未知'}</div>
+                <div class="info-item" style="border-bottom: 2px solid #00ff96; padding-bottom: 8px; margin-bottom: 12px;">
+                    <div class="text-main" style="font-size: 18px;">${props.name_cn || '未知'}</div>
+                    <div class="text-sub" style="font-size: 13px;">${props.name_en || ''}</div>
+                </div>
                 <div class="info-item"><span class="label">编码:</span> ${props.stop_id || 'N/A'}</div>
                 <div class="info-item"><span class="label">城市:</span> ${props.city_code || 'N/A'}</div>
                 <hr>
