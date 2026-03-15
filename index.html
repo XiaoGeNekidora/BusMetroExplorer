@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html >
+<head>
+
+    <meta charset="UTF-8">
+    <title>Deck.gl + FlatGeobuf 830k Points</title>
+    <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
+    <script src="https://unpkg.com/@loaders.gl/core@latest/dist/dist.min.js"></script>
+    <script src="https://unpkg.com/@loaders.gl/flatgeobuf@latest/dist/dist.min.js"></script>
+    <script src="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.css" rel="stylesheet"/>
+    <style>
+        body {
+            margin: 0px;
+        }
+
+        /* 面板样式 */
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            max-height: 80%;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            font-family: sans-serif;
+            z-index: 100;
+            overflow-y: auto;
+            pointer-events: auto; /* 确保面板可以点击/滚动 */
+            display: none; /* 初始隐藏 */
+        }
+
+        #info-panel h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #00ff96;
+            padding-bottom: 8px;
+        }
+
+        .info-item {
+            margin: 10px 0;
+            font-size: 14px;
+        }
+
+        .label {
+            font-weight: bold;
+            color: #666;
+        }
+
+        /* 线路列表容器 */
+        #routes-container {
+            margin-top: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        /* 单个线路卡片样式 */
+        .route-card {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .route-card:hover {
+            background: #e2e6ea;
+            border-color: #dae0e5;
+            transform: translateY(-2px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .route-cn {
+            font-size: 14px;
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 4px;
+        }
+
+        .route-en {
+            font-size: 11px;
+            color: #6c757d;
+            line-height: 1.2;
+        }
+
+        /* 模态框样式 */
+        #route-modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 10% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 600px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+            position: relative;
+        }
+
+        .close-btn {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close-btn:hover,
+        .close-btn:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .modal-header {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        .detail-row {
+            display: flex;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #f9f9f9;
+            padding-bottom: 4px;
+        }
+
+        .detail-label {
+            width: 120px;
+            font-weight: bold;
+            color: #555;
+            flex-shrink: 0;
+        }
+
+        .detail-value {
+            color: #333;
+            word-break: break-all;
+        }
+
+        /* 已显示线路面板 */
+        #active-routes-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 260px;
+            max-height: 80%;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            font-family: sans-serif;
+            z-index: 90; /* 低于模态框 */
+            overflow-y: auto;
+        }
+
+        #active-routes-panel h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 16px;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 5px;
+        }
+
+        .active-route-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fff;
+            padding: 8px;
+            margin-bottom: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .active-route-name {
+            font-weight: bold;
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 170px;
+        }
+
+        .remove-btn {
+            color: #dc3545;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 12px;
+            padding: 2px 6px;
+            border: 1px solid #dc3545;
+            border-radius: 4px;
+        }
+
+        .remove-btn:hover {
+            background: #dc3545;
+            color: white;
+        }
+
+        .add-map-btn {
+            display: inline-block;
+            background-color: #28a745;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 14px;
+            margin-top: 10px;
+            cursor: pointer;
+            border: none;
+        }
+
+        .add-map-btn:hover {
+            background-color: #218838;
+        }
+
+        .add-map-btn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+<div id="container" style="width: 100vw; height: 100vh;"></div>
+
+<div id="active-routes-panel">
+    <h3>已显示线路</h3>
+    <div id="active-routes-list">
+        <div style="color:#999; font-size:12px;">暂无显示线路</div>
+    </div>
+</div>
+
+<div id="info-panel">
+    <h3>公交站点信息</h3>
+    <div id="panel-content">点击地图上的点查看详情</div>
+</div>
+
+<!-- 路线详情模态框 -->
+<div id="route-modal">
+    <div class="modal-content">
+        <span class="close-btn">&times;</span>
+        <div id="modal-body">
+            <!-- 内容将通过 JS 插入 -->
+        </div>
+    </div>
+</div>
+
+<script>
+    const {DeckGL, GeoJsonLayer} = deck;
+    const {FlatGeobufLoader, load} = loaders; // 所有 @loaders.gl 的加载器都在这里
+
+    const panel = document.getElementById('info-panel');
+    const content = document.getElementById('panel-content');
+    const backend = "http://127.0.0.1:8000";
+    const modal = document.getElementById('route-modal');
+    const modalBody = document.getElementById('modal-body');
+    const closeBtn = document.getElementsByClassName("close-btn")[0];
+    const activeRoutesList = document.getElementById('active-routes-list');
+
+    // State for active routes
+    let activeRoutes = []; // Array of {route_cn, geometry, color}
+
+    // Colors generator
+    const colors = [
+        [255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0], [0, 255, 255], [255, 0, 255],
+        [255, 128, 0], [0, 255, 128], [128, 0, 255]
+    ];
+    let colorIndex = 0;
+
+    // Close modal when clicking X
+    closeBtn.onclick = function() {
+        modal.style.display = "none";
+    }
+
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+        if (event.target == modal) {
+            modal.style.display = "none";
+        }
+    }
+
+    // Function to show route details
+    function showRouteDetails(routeCn) {
+        modal.style.display = "block";
+        modalBody.innerHTML = '<div>正在加载详细信息...</div>';
+
+        fetch(`${backend}/route?route_cn=${encodeURIComponent(routeCn)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.length > 0) {
+                    let html = '';
+                    // Store strict fetched data temporarily to allow adding to map
+                    // We attach the data object to the button via closure or global map
+                    // Closure is cleaner but HTML string building makes it tricky.
+                    // We will serialize the data into the button's onclick or just use the routeCn re-fetch/cache logic.
+                    // Better: store currentRouteData in a variable
+                    window.currentRouteData = data;
+
+                    data.forEach((item, index) => {
+                        const isAlreadyAdded = activeRoutes.some(r => r.route_cn === item.route_cn);
+                        const btnText = isAlreadyAdded ? "已在地图显示" : "添加到显示列表";
+                        const btnDisabled = isAlreadyAdded ? "disabled" : "";
+
+                        html += `
+                            <div class="modal-header">
+                                <h2 style="margin:0; color:#007bff;">${item.route_cn}</h2>
+                                <div style="color:#666;">${item.route_en || ''}</div>
+                                <button class="add-map-btn"
+                                    onclick="addRouteToMap('${index}')"
+                                    ${btnDisabled}
+                                    id="btn-add-${index}">
+                                    ${btnText}
+                                </button>
+                            </div>
+                            <div class="detail-row"><div class="detail-label">线路类型:</div><div class="detail-value">${item.route_type || '-'}</div></div>
+                            <div class="detail-row"><div class="detail-label">运营公司:</div><div class="detail-value">${item.company_cn || '-'}</div></div>
+                            <div class="detail-row"><div class="detail-label">Company:</div><div class="detail-value">${item.company_en || '-'}</div></div>
+                            <div class="detail-row"><div class="detail-label">起点站:</div><div class="detail-value">${item.s_stop_cn || '-'} (${item.s_stop_en || ''})</div></div>
+                            <div class="detail-row"><div class="detail-label">终点站:</div><div class="detail-value">${item.e_stop_cn || '-'} (${item.e_stop_en || ''})</div></div>
+                            <div class="detail-row"><div class="detail-label">首班车:</div><div class="detail-value">${item.start_time || '-'}</div></div>
+                            <div class="detail-row"><div class="detail-label">末班车:</div><div class="detail-value">${item.end_time || '-'}</div></div>
+                            <div class="detail-row"><div class="detail-label">票价(基础/全程):</div><div class="detail-value">${item.basic_prc || '-'} / ${item.total_prc || '-'}</div></div>
+                            <div class="detail-row"><div class="detail-label">距离/长度:</div><div class="detail-value">${item.distance || '-'} / ${item.length || '-'} km</div></div>
+                            <div class="detail-row"><div class="detail-label">城市:</div><div class="detail-value">${item.city_cn || '-'} (${item.city_en || '-'})</div></div>
+                            ${index < data.length - 1 ? '<hr>' : ''}
+                        `;
+                    });
+                    modalBody.innerHTML = html;
+                } else {
+                    modalBody.innerHTML = '<div>未找到该线路的详细信息</div>';
+                }
+            })
+            .catch(err => {
+                console.error("Fetch route details error:", err);
+                modalBody.innerHTML = '<div style="color:red;">获取失败</div>';
+            });
+    }
+
+    function parseWKT(wkt) {
+        // Simple parser for LINESTRING (x y, x y, ...)
+        if (!wkt || !wkt.startsWith('LINESTRING')) return null;
+        try {
+            const inner = wkt.substring(wkt.indexOf('(') + 1, wkt.lastIndexOf(')'));
+            const parts = inner.split(',');
+            const coords = parts.map(p => {
+                const [x, y] = p.trim().split(/\s+/).map(Number);
+                return [x, y];
+            });
+            return { type: 'LineString', coordinates: coords };
+        } catch (e) {
+            console.error("WKT parse error", e);
+            return null;
+        }
+    }
+
+    function addRouteToMap(index) {
+        const route = window.currentRouteData[index];
+        if (!route.geometry) {
+            alert("该线路暂无地理信息");
+            return;
+        }
+
+        const geojson = parseWKT(route.geometry);
+        if (!geojson) {
+            alert("地理信息解析失败");
+            return;
+        }
+
+        // Check duplicates
+        if (activeRoutes.some(r => r.route_cn === route.route_cn)) return;
+
+        const color = colors[colorIndex % colors.length];
+        colorIndex++;
+
+        activeRoutes.push({
+            route_cn: route.route_cn,
+            geometry: geojson,
+            color: color
+        });
+
+        // Update UI
+        updateActiveRoutesUI();
+
+        // Update Map Layers
+        updateDeckLayers();
+
+        // Disable button
+        const btn = document.getElementById(`btn-add-${index}`);
+        if(btn) {
+            btn.innerText = "已在地图显示";
+            btn.disabled = true;
+        }
+    }
+
+    function removeRouteFromMap(routeCn) {
+        activeRoutes = activeRoutes.filter(r => r.route_cn !== routeCn);
+        updateActiveRoutesUI();
+        updateDeckLayers();
+
+        // If modal is open for this route, re-enable button (optional, but nice)
+        // Ideally we would check if modal is open and matching route
+    }
+
+    function updateActiveRoutesUI() {
+        if (activeRoutes.length === 0) {
+            activeRoutesList.innerHTML = '<div style="color:#999; font-size:12px;">暂无显示线路</div>';
+            return;
+        }
+
+        let html = '';
+        activeRoutes.forEach(r => {
+            const colorStyle = `background: rgb(${r.color.join(',')}); width: 10px; height: 10px; display: inline-block; margin-right: 5px; border-radius: 50%;`;
+            html += `
+                <div class="active-route-item">
+                    <div style="display:flex; align-items:center;">
+                        <span style="${colorStyle}"></span>
+                        <span class="active-route-name" title="${r.route_cn}">${r.route_cn}</span>
+                    </div>
+                    <span class="remove-btn" onclick="removeRouteFromMap('${r.route_cn.replace(/'/g, "\\'")}')">X</span>
+                </div>
+            `;
+        });
+        activeRoutesList.innerHTML = html;
+    }
+
+    function updateDeckLayers() {
+        const layers = [
+            new GeoJsonLayer({
+                id: 'fgb-layer',
+                data: 'data/bus_stops.fgb',
+                loaders: [FlatGeobufLoader],
+                pointType: 'circle',
+                getFillColor: [0, 255, 150],
+                getPointRadius: 20,
+                pointRadiusMinPixels: 1,
+                pickable: true,
+                _separatePropData: true,
+                onClick: (info) => {
+                    // ... (Original onClick logic replicated or extracted)
+                    // Since I cannot easily extract the original onClick without rewriting it fully or using a variable,
+                    // I will define the onClick handler as a separate function.
+                    handleStopClick(info);
+                }
+            })
+        ];
+
+        // Add Active Routes Layer
+        if (activeRoutes.length > 0) {
+            // We can combine them into one FeatureCollection or use multiple layers.
+            // One layer is better for performance.
+            const features = activeRoutes.map(r => ({
+                type: 'Feature',
+                geometry: r.geometry,
+                properties: {
+                    route_cn: r.route_cn,
+                    color: r.color
+                }
+            }));
+
+            layers.push(new GeoJsonLayer({
+                id: 'active-routes-layer',
+                data: features,
+                stroked: true,
+                filled: false,
+                lineWidthMinPixels: 2,
+                getLineColor: d => d.properties.color,
+                getLineWidth: 3,
+                pickable: true,
+                onClick: (info) => {
+                    if (info.object) {
+                        alert(`Route: ${info.object.properties.route_cn}`);
+                    }
+                }
+            }));
+        }
+
+        deckgl.setProps({ layers: layers });
+    }
+
+    function handleStopClick(info) {
+        if (info.object) {
+            const props = info.object.properties;
+            panel.style.display = 'block';
+
+            content.innerHTML = `
+                <div class="info-item"><span class="label">站名:</span> ${props.name_cn || '未知'}</div>
+                <div class="info-item"><span class="label">Station Name:</span> ${props.name_en || '未知'}</div>
+                <div class="info-item"><span class="label">编码:</span> ${props.stop_id || 'N/A'}</div>
+                <div class="info-item"><span class="label">城市:</span> ${props.city_code || 'N/A'}</div>
+                <hr>
+                <strong>经停线路:</strong>
+                <div id="routes-container">
+                    <div>正在加载线路信息...</div>
+                </div>
+            `;
+
+            if (props.stop_id) {
+                fetch(`${backend}/stop?stop_id=${props.stop_id}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const container = document.getElementById('routes-container');
+                        if (data && data.length > 0) {
+                            let html = '';
+                            data.forEach(route => {
+                                html += `
+                                    <div class="route-card" onclick="showRouteDetails('${route.route_cn.replace(/'/g, "\\'")}')">
+                                        <div class="route-cn">${route.route_cn || '未知线路'}</div>
+                                        <div class="route-en">${route.route_en || ''}</div>
+                                    </div>
+                                `;
+                            });
+                            container.innerHTML = html;
+                        } else {
+                            container.innerHTML = '<div style="color:#999; font-size:12px;">暂无线路信息</div>';
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Fetch error:", err);
+                        document.getElementById('routes-container').innerHTML =
+                            '<div style="color:red; font-size:12px;">加载失败，请检查后端</div>';
+                    });
+            } else {
+                document.getElementById('routes-container').innerHTML =
+                    '<div style="color:#999; font-size:12px;">无站点ID，无法查询</div>';
+            }
+
+        } else {
+            panel.style.display = 'none';
+        }
+    }
+
+    const deckgl = new DeckGL({
+        container: 'container',
+        mapStyle: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+        initialViewState: {
+            longitude: 118.79256,
+            latitude: 32.05874,
+            zoom: 11
+        },
+        controller: true,
+        // Initial setup only uses default layers.
+        // We defer layer creation to updateDeckLayers() but deckgl constructor expects layers.
+        // So we call updateDeckLayers() immediately after construction or pass initial layers here.
+        // It's cleaner to pass the initial layers in constructor as before, then update.
+        layers: [
+            new GeoJsonLayer({
+                id: 'fgb-layer',
+                data: 'data/bus_stops.fgb',
+                loaders: [FlatGeobufLoader],
+                pointType: 'circle',
+                getFillColor: [0, 255, 150],
+                getPointRadius: 20,
+                pointRadiusMinPixels: 1,
+                pickable: true,
+                _separatePropData: true,
+                onClick: handleStopClick
+            })
+        ]
+    });
+</script>
+</body>
+</html>
