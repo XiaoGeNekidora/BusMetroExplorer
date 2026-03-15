@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
 import uvicorn
 from typing import List, Dict, Any
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 app = FastAPI(title="BusRoute API")
 
@@ -14,6 +16,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount the 'data' directory to serve static files (like .fgb)
+app.mount("/data", StaticFiles(directory="data"), name="data")
 
 DB_PATH = "data/bus_routes.db"
 
@@ -122,8 +127,12 @@ def get_route_stops(route_cn: str = Query(..., description="Route name in Chines
     return [dict(row) for row in rows]
 
 
+@app.get("/")
+async def read_index():
+    return FileResponse('index.html')
+
+
 if __name__ == "__main__":
     # Run user with: python backend.py
     # Access API docs at: http://127.0.0.1:8000/docs
-    uvicorn.run("backend:app", host="127.0.0.1", port=8000, reload=True)
-
+    uvicorn.run(app, host="0.0.0.0", port=8000)

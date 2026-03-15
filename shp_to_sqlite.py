@@ -68,7 +68,7 @@ def main():
     db_path = "data/bus_routes.db"
     
     # Process bus_routes (完整保留，包含 geometry)
-    # process_shp_to_sqlite("data/bus_routes.shp", db_path, "bus_routes")
+    process_shp_to_sqlite("data/bus_routes.shp", db_path, "bus_routes")
     
     # Process bus_stops (只保留特定字段，丢弃 geometry)
     stop_cols = ['name_cn', 'name_en', 'stop_id', 'route_cn', 'route_en', 'route_id']
