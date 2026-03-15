@@ -234,6 +234,88 @@
             background-color: #6c757d;
             cursor: not-allowed;
         }
+
+        /* 线路站点时间轴样式 */
+        .route-stops-container {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .stops-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .timeline {
+            position: relative;
+            padding-left: 20px;
+            margin-top: 10px;
+        }
+
+        /* Vertical line */
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 5px;
+            top: 8px; /* Start a bit down */
+            bottom: 0;
+            width: 2px;
+            background: #e9ecef;
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-bottom: 25px;
+        }
+
+        .timeline-item:last-child {
+            padding-bottom: 0;
+        }
+
+        /* Hide line for last item if we want accurate start/end,
+           bu usually line goes through. Let's stick to simple line.
+           To stop line at last dot, we can limit height or ::before logic.
+           Easier hack: background-color white on bottom of last item?
+           Or just let it be.
+        */
+
+        .timeline-dot {
+            position: absolute;
+            left: -21px; /* Adjust based on padding-left of timeline */
+            top: 5px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #fff;
+            border: 3px solid #007bff;
+            z-index: 2; /* Above the line */
+            transition: all 0.2s;
+        }
+
+        .timeline-item:hover .timeline-dot {
+            background: #007bff;
+            transform: scale(1.2);
+        }
+
+        .timeline-content {
+            margin-left: 5px;
+            cursor: default;
+        }
+
+        .stop-name-cn {
+            font-weight: bold;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .stop-name-en {
+            font-size: 12px;
+            color: #888;
+            margin-top: 2px;
+        }
     </style>
 </head>
 <body>
@@ -300,56 +382,87 @@
         modal.style.display = "block";
         modalBody.innerHTML = '<div>正在加载详细信息...</div>';
 
-        fetch(`${backend}/route?route_cn=${encodeURIComponent(routeCn)}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data && data.length > 0) {
-                    let html = '';
-                    // Store strict fetched data temporarily to allow adding to map
-                    // We attach the data object to the button via closure or global map
-                    // Closure is cleaner but HTML string building makes it tricky.
-                    // We will serialize the data into the button's onclick or just use the routeCn re-fetch/cache logic.
-                    // Better: store currentRouteData in a variable
-                    window.currentRouteData = data;
+        // Parallel fetching: Route Details AND Route Stops
+        Promise.all([
+            fetch(`${backend}/route?route_cn=${encodeURIComponent(routeCn)}`).then(res => res.json()),
+            fetch(`${backend}/route_stops?route_cn=${encodeURIComponent(routeCn)}`).then(res => res.json())
+        ]).then(([routeData, stopsData]) => {
+            if (routeData && routeData.length > 0) {
+                let html = '';
+                // Store strict fetched data temporarily
+                window.currentRouteData = routeData;
 
-                    data.forEach((item, index) => {
-                        const isAlreadyAdded = activeRoutes.some(r => r.route_cn === item.route_cn);
-                        const btnText = isAlreadyAdded ? "已在地图显示" : "添加到显示列表";
-                        const btnDisabled = isAlreadyAdded ? "disabled" : "";
+                routeData.forEach((item, index) => {
+                    const isAlreadyAdded = activeRoutes.some(r => r.route_cn === item.route_cn);
+                    const btnText = isAlreadyAdded ? "已在地图显示" : "添加到显示列表";
+                    const btnDisabled = isAlreadyAdded ? "disabled" : "";
+
+                    html += `
+                        <div class="modal-header">
+                            <h2 style="margin:0; color:#007bff;">${item.route_cn}</h2>
+                            <div style="color:#666;">${item.route_en || ''}</div>
+                            <button class="add-map-btn"
+                                onclick="addRouteToMap('${index}')"
+                                ${btnDisabled}
+                                id="btn-add-${index}">
+                                ${btnText}
+                            </button>
+                        </div>
+                        <div class="detail-row"><div class="detail-label">线路类型:</div><div class="detail-value">${item.route_type || '-'}</div></div>
+                        <div class="detail-row"><div class="detail-label">运营公司:</div><div class="detail-value">${item.company_cn || '-'}</div></div>
+                        <div class="detail-row"><div class="detail-label">Company:</div><div class="detail-value">${item.company_en || '-'}</div></div>
+                        <div class="detail-row"><div class="detail-label">起点站:</div><div class="detail-value">${item.s_stop_cn || '-'} (${item.s_stop_en || ''})</div></div>
+                        <div class="detail-row"><div class="detail-label">终点站:</div><div class="detail-value">${item.e_stop_cn || '-'} (${item.e_stop_en || ''})</div></div>
+                        <div class="detail-row"><div class="detail-label">首班车:</div><div class="detail-value">${item.start_time || '-'}</div></div>
+                        <div class="detail-row"><div class="detail-label">末班车:</div><div class="detail-value">${item.end_time || '-'}</div></div>
+                        <div class="detail-row"><div class="detail-label">票价(基础/全程):</div><div class="detail-value">${item.basic_prc || '-'} / ${item.total_prc || '-'}</div></div>
+                        <div class="detail-row"><div class="detail-label">距离/长度:</div><div class="detail-value">${item.distance || '-'} / ${item.length || '-'} km</div></div>
+                        <div class="detail-row"><div class="detail-label">城市:</div><div class="detail-value">${item.city_cn || '-'} (${item.city_en || '-'})</div></div>
+                    `;
+
+                    // Add stop list if available and matches this route name (though usually duplicate route names for diff directions are separate entries in backend/db,
+                    // but query by name might return multiple. Stops query usually returns one combined list or needs filtering if DB has direction.
+                    // Assuming basic flat list for now or first one).
+                    // If multiple route variants (e.g. A->B, B->A) come back, stops endpoint might mix them or just return all associated with that name.
+                    // For simplicity, we append the stop list at the end of the first route card, or repeated for each if applicable.
+
+                    if (index === 0 && stopsData && stopsData.length > 0) {
+                        html += `
+                            <div class="route-stops-container">
+                                <div class="stops-title">途经站点 (${stopsData.length})</div>
+                                <div class="timeline">
+                        `;
+
+                        stopsData.forEach(stop => {
+                            html += `
+                                <div class="timeline-item">
+                                    <div class="timeline-dot"></div>
+                                    <div class="timeline-content">
+                                        <div class="stop-name-cn">${stop.name_cn || '未知站点'}</div>
+                                        <div class="stop-name-en">${stop.name_en || ''}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
 
                         html += `
-                            <div class="modal-header">
-                                <h2 style="margin:0; color:#007bff;">${item.route_cn}</h2>
-                                <div style="color:#666;">${item.route_en || ''}</div>
-                                <button class="add-map-btn"
-                                    onclick="addRouteToMap('${index}')"
-                                    ${btnDisabled}
-                                    id="btn-add-${index}">
-                                    ${btnText}
-                                </button>
+                                </div>
                             </div>
-                            <div class="detail-row"><div class="detail-label">线路类型:</div><div class="detail-value">${item.route_type || '-'}</div></div>
-                            <div class="detail-row"><div class="detail-label">运营公司:</div><div class="detail-value">${item.company_cn || '-'}</div></div>
-                            <div class="detail-row"><div class="detail-label">Company:</div><div class="detail-value">${item.company_en || '-'}</div></div>
-                            <div class="detail-row"><div class="detail-label">起点站:</div><div class="detail-value">${item.s_stop_cn || '-'} (${item.s_stop_en || ''})</div></div>
-                            <div class="detail-row"><div class="detail-label">终点站:</div><div class="detail-value">${item.e_stop_cn || '-'} (${item.e_stop_en || ''})</div></div>
-                            <div class="detail-row"><div class="detail-label">首班车:</div><div class="detail-value">${item.start_time || '-'}</div></div>
-                            <div class="detail-row"><div class="detail-label">末班车:</div><div class="detail-value">${item.end_time || '-'}</div></div>
-                            <div class="detail-row"><div class="detail-label">票价(基础/全程):</div><div class="detail-value">${item.basic_prc || '-'} / ${item.total_prc || '-'}</div></div>
-                            <div class="detail-row"><div class="detail-label">距离/长度:</div><div class="detail-value">${item.distance || '-'} / ${item.length || '-'} km</div></div>
-                            <div class="detail-row"><div class="detail-label">城市:</div><div class="detail-value">${item.city_cn || '-'} (${item.city_en || '-'})</div></div>
-                            ${index < data.length - 1 ? '<hr>' : ''}
                         `;
-                    });
-                    modalBody.innerHTML = html;
-                } else {
-                    modalBody.innerHTML = '<div>未找到该线路的详细信息</div>';
-                }
-            })
-            .catch(err => {
-                console.error("Fetch route details error:", err);
-                modalBody.innerHTML = '<div style="color:red;">获取失败</div>';
-            });
+                    }
+
+                    if (index < routeData.length - 1) {
+                        html += '<hr>';
+                    }
+                });
+                modalBody.innerHTML = html;
+            } else {
+                modalBody.innerHTML = '<div>未找到该线路的详细信息</div>';
+            }
+        }).catch(err => {
+            console.error("Fetch route details error:", err);
+            modalBody.innerHTML = '<div style="color:red;">获取失败</div>';
+        });
     }
 
     function parseWKT(wkt) {
