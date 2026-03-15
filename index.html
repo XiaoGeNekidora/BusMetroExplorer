@@ -344,7 +344,7 @@
 </div>
 
 <script>
-    const {DeckGL, GeoJsonLayer} = deck;
+    const {DeckGL, GeoJsonLayer, TextLayer, WebMercatorViewport} = deck;
     const {FlatGeobufLoader, load} = loaders; // 所有 @loaders.gl 的加载器都在这里
 
     const panel = document.getElementById('info-panel');
@@ -355,6 +355,13 @@
     const closeBtn = document.getElementsByClassName("close-btn")[0];
     const activeRoutesList = document.getElementById('active-routes-list');
 
+    // View State
+    let currentViewState = {
+        longitude: 118.79256,
+        latitude: 32.05874,
+        zoom: 11
+    };
+
     // State for active routes
     let activeRoutes = []; // Array of {route_cn, geometry, color}
 
@@ -364,6 +371,11 @@
         [255, 128, 0], [0, 255, 128], [128, 0, 255]
     ];
     let colorIndex = 0;
+    
+    // Data cache
+    let allStopsData = [];
+    let visibleStopsData = [];
+    let lastFilterZoom = 0;
 
     // Close modal when clicking X
     closeBtn.onclick = function() {
@@ -564,6 +576,12 @@
                 pointRadiusMinPixels: 1,
                 pickable: true,
                 _separatePropData: true,
+                onDataLoad: (data) => {
+                    // Cache the data for text layer
+                    // FlatGeobufLoader returns an object with features array or iterable usually
+                    allStopsData = data.features || data;
+                    updateDeckLayers();
+                },
                 onClick: (info) => {
                     // ... (Original onClick logic replicated or extracted)
                     // Since I cannot easily extract the original onClick without rewriting it fully or using a variable,
@@ -600,6 +618,53 @@
                         alert(`Route: ${info.object.properties.route_cn}`);
                     }
                 }
+            }));
+        }
+
+        // Add Station Names Text Layer (Zoom Dependent QoL)
+        if (currentViewState.zoom >= 14 && allStopsData && allStopsData.length > 0) {
+            // Filter points to current viewport to optimize performance (800k is too many for TextLayer)
+            // Only re-filter if not dragging (handled inside getting loop? no)
+            // We filter every time updateDeckLayers is called for now, assuming DeckGL is performant enough or debounced.
+            // Actually, we should filter.
+
+            const container = document.getElementById('container');
+            const { clientWidth, clientHeight } = container;
+
+            // We need to pass width/height to WebMercatorViewport for accurate projection
+            const viewport = new WebMercatorViewport({
+                ...currentViewState,
+                width: clientWidth,
+                height: clientHeight
+            });
+
+            // Simple optimization: only re-filter if zoom changed significantly or panned?
+            // For smooth UX, dynamic filtering is needed.
+            // Filter logic:
+            const filtered = allStopsData.filter(d => {
+                // Check if geometry is Point
+                if (d.geometry.type !== 'Point') return false;
+                const [lng, lat] = d.geometry.coordinates;
+
+                // viewport.contains() is not a function. We must project and check bounds.
+                const [x, y] = viewport.project([lng, lat]);
+                return x >= -50 && x <= clientWidth + 50 && y >= -50 && y <= clientHeight + 50; // Add small buffer
+            });
+
+            layers.push(new TextLayer({
+                id: 'stops-text-layer',
+                data: filtered,
+                getPosition: d => d.geometry.coordinates,
+                getText: d => d.properties.name_cn,
+                getSize: 12,
+                getColor: [255, 255, 255, 255],
+                outlineWidth: 3,
+                outlineColor: [255, 255, 255, 255],
+                fontFamily: 'sans-serif',
+                characterSet: 'auto', // Auto-generate atlas for Chinese characters
+                getTextAnchor: 'middle',
+                getAlignmentBaseline: 'top',
+                getPixelOffset: [0, 8] // Below the dot
             }));
         }
 
@@ -712,12 +777,27 @@
     const deckgl = new DeckGL({
         container: 'container',
         mapStyle: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-        initialViewState: {
-            longitude: 118.79256,
-            latitude: 32.05874,
-            zoom: 11
-        },
+        viewState: currentViewState, // Use controlled viewState
         controller: true,
+        onViewStateChange: ({viewState, interactionState}) => {
+            currentViewState = viewState;
+            deckgl.setProps({viewState});
+
+            // Update layers (trigger filtering)
+            // Note: filtering 800k items during drag (isDragging) might be heavy.
+            // If interactionState.isDragging is true, we could skip TextLayer update or use throttled update
+            // But for now let's try direct update. If laggy, we can block update during drag.
+            if (!interactionState.isDragging) {
+                 updateDeckLayers();
+            } else {
+                // While dragging, maybe don't update layers (TextLayer will stay with old data or disappear?)
+                // If we don't call updateDeckLayers, TextLayer won't move?
+                // No, TextLayer moves with viewState prop (handled by DeckGL).
+                // But the *data* (subset) won't update.
+                // This means markers will move correctly, but new markers coming into view wont appear until drag ends.
+                // This is actually a good performance optimization!
+            }
+        },
         // Initial setup only uses default layers.
         // We defer layer creation to updateDeckLayers() but deckgl constructor expects layers.
         // So we call updateDeckLayers() immediately after construction or pass initial layers here.
@@ -733,6 +813,10 @@
                 pointRadiusMinPixels: 1,
                 pickable: true,
                 _separatePropData: true,
+                onDataLoad: (data) => {
+                    allStopsData = data.features || data;
+                    updateDeckLayers();
+                },
                 onClick: handleStopClick
             })
         ]
